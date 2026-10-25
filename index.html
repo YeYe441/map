@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Cultivation World Map</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0b1020; color: #fff; font-family: sans-serif; }
+  #top {
+    position: fixed; top: 0; left: 0; right: 0; height: 48px; z-index: 5;
+    display: flex; align-items: center; gap: 10px; padding: 0 10px;
+    background: #141b33; border-bottom: 1px solid #7e57c2;
+  }
+  #top button {
+    border: 0; border-radius: 8px; padding: 8px 12px; font-size: 15px;
+    background: #7e57c2; color: #fff;
+  }
+  #title { font-size: 16px; font-weight: bold; }
+  #viewport { position: absolute; top: 48px; bottom: 0; left: 0; right: 0; overflow: auto; }
+  #stage { position: relative; width: max(100%, 900px); }
+  #map { width: 100%; display: block; user-select: none; -webkit-user-drag: none; }
+  .spot {
+    position: absolute; width: 14%; height: 7%;
+    transform: translate(-50%, -50%);
+    border: 1px dashed rgba(255,255,255,0.35); border-radius: 10px;
+    background: rgba(255,255,255,0.05); cursor: pointer;
+  }
+  .spot:active { background: rgba(126,87,194,0.5); }
+  .spot.world { width: 16%; height: 9%; border-color: rgba(255,215,0,0.6); }
+  #panel {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; padding: 14px;
+    background: #1b2340; border-top: 2px solid #7e57c2; display: none;
+  }
+  #panel .name { font-size: 18px; font-weight: bold; }
+  #panel .sub { opacity: .75; margin-top: 2px; }
+  #panel button {
+    margin: 10px 8px 0 0; padding: 10px 16px; border: 0; border-radius: 8px;
+    background: #7e57c2; color: #fff; font-size: 16px;
+  }
+  #panel button.alt { background: #37415f; }
+</style>
+</head>
+<body>
+
+<div id="top">
+  <button id="back" style="display:none">&#8592; World</button>
+  <div id="title"></div>
+</div>
+
+<div id="viewport">
+  <div id="stage">
+    <img id="map" alt="map">
+  </div>
+</div>
+
+<div id="panel">
+  <div class="name" id="pname"></div>
+  <div class="sub" id="psub"></div>
+  <div id="pbtns"></div>
+</div>
+
+<script>
+/*
+  IMAGE FILE NAMES (upload these exact names next to index.html):
+  world.png  north.png  east.png  west.png  central.png  south.png
+  azure-isles.png  spirit-isles.png  dragon-isles.png  immortal-isles.png  blessed-isles.png
+
+  Spot positions are percentages: x = left to right, y = top to bottom (0-100).
+  "goto" = tapping opens another map. Otherwise it is a holding you can acquire.
+*/
+var MAPS = {
+  world: { title: "Cultivation World", img: "world.png", spots: [
+    { name: "Northern Mainland", sub: "Frostveil Valley", x: 51, y: 17, goto: "north" },
+    { name: "Eastern Mainland", sub: "Sacred Forests", x: 19, y: 28, goto: "east" },
+    { name: "Western Mainland", sub: "Lost Deserts", x: 81, y: 31, goto: "west" },
+    { name: "Central Mainland", sub: "Imperial Heartland", x: 52, y: 46, goto: "central" },
+    { name: "Southern Mainland", sub: "Misty Wilds", x: 48, y: 70, goto: "south" },
+    { name: "Azure Isles", sub: "Healing Retreat", x: 17, y: 54, goto: "azure" },
+    { name: "Spirit Isles", sub: "Spirits and Harmony", x: 21, y: 68, goto: "spirit" },
+    { name: "Dragon Isles", sub: "Fire and Dragons", x: 77, y: 55, goto: "dragon" },
+    { name: "Immortal Isles", sub: "Eternal Life", x: 93, y: 61, goto: "immortal" },
+    { name: "Blessed Isles", sub: "Divine Blessings", x: 88, y: 79, goto: "blessed" }
+  ]},
+
+  north: { title: "North Mainland", img: "north.png", spots: [
+    { name: "Ice Dragon Lair", sub: "Beast Habitat", x: 21.8, y: 22.3 },
+    { name: "Frostveil Palace", sub: "Immortal Sect", x: 50.8, y: 28.3 },
+    { name: "Sky Ruins", sub: "Ancient Ruins", x: 74.5, y: 23.2 },
+    { name: "Frostbite Valley", sub: "Treasure Hunt", x: 16.6, y: 44.6 },
+    { name: "Snowflake Village", sub: "Trading Hub", x: 44.6, y: 52.3 },
+    { name: "Glacial Forest", sub: "Resource Area", x: 72.5, y: 47.1 },
+    { name: "Spirit Spring", sub: "Spirit Vein", x: 30.9, y: 74.4 },
+    { name: "Frostfire Mountain", sub: "Danger Zone", x: 55.3, y: 77.8 },
+    { name: "Moonlight Lake", sub: "Teleport Gate", x: 74.2, y: 80.3 }
+  ]},
+
+  east: { title: "East Mainland", img: "east.png", spots: [
+    { name: "Azure Peaks", sub: "", x: 49.9, y: 13.5 },
+    { name: "Verdant Forest", sub: "Spirit Herb Zone", x: 23.8, y: 22.7 },
+    { name: "Jade Village", sub: "Trading Hub", x: 76.8, y: 30.3 },
+    { name: "Spirit River", sub: "Qi Gathering Area", x: 50.6, y: 37.1 },
+    { name: "Ancient Ruins", sub: "Treasure Hunt", x: 27.3, y: 41.5 },
+    { name: "Sacred Lake", sub: "Resource Area", x: 81.1, y: 53.2 },
+    { name: "Azure Isles", sub: "Floating Realm", x: 24.7, y: 72.3, goto: "azure" },
+    { name: "Eastern Coast", sub: "Port City", x: 50, y: 68.8 }
+  ]},
+
+  west: { title: "West Mainland", img: "west.png", spots: [
+    { name: "Dragon Canyon", sub: "Danger Zone", x: 51.8, y: 14.8 },
+    { name: "Sand Fortress", sub: "Ancient Ruins", x: 28.6, y: 30.5 },
+    { name: "Lost Desert", sub: "Resource Area", x: 58.6, y: 34.7 },
+    { name: "Oasis", sub: "Resource Area", x: 48.8, y: 47.9 },
+    { name: "Desert Ruins", sub: "Treasure Hunt", x: 83.2, y: 43.3 },
+    { name: "Ancient Ruins", sub: "Treasure Hunt", x: 23.4, y: 52.3 },
+    { name: "Gobi Wasteland", sub: "Resource Area", x: 69.2, y: 71.1 },
+    { name: "Scorching Wastes", sub: "Danger Zone", x: 41.3, y: 78.3 }
+  ]},
+
+  central: { title: "Central Mainland", img: "central.png", spots: [
+    { name: "Celestial Peak", sub: "Heavenly Jade Mountain", x: 51.4, y: 18.6 },
+    { name: "Azure Cloud Sect", sub: "Great Sect", x: 21.8, y: 28.5 },
+    { name: "Black Flame Ridge", sub: "Danger Zone", x: 75.5, y: 28.5 },
+    { name: "Green Willow Valley", sub: "Resource Area", x: 19.2, y: 45.1 },
+    { name: "Imperial Capital", sub: "The Heart of the Realm", x: 51.1, y: 46.9 },
+    { name: "Ancient Ruins", sub: "Forbidden Domain", x: 82, y: 47.9 },
+    { name: "Dragon Hollow", sub: "Beast Habitat", x: 66.7, y: 62.3 },
+    { name: "Sky Island", sub: "Floating Realm", x: 14.6, y: 68.1 },
+    { name: "Jade Lake", sub: "Tranquility Zone", x: 46.9, y: 77.3 },
+    { name: "Golden Sands", sub: "Trade Route", x: 80.1, y: 79.1 }
+  ]},
+
+  south: { title: "South Mainland", img: "south.png", spots: [
+    { name: "Cloud Mountain", sub: "Resource Area", x: 53.3, y: 16.6 },
+    { name: "Misty Forest", sub: "Herbal Area", x: 27.9, y: 27.8 },
+    { name: "Beast Domain", sub: "Beast Habitat", x: 74.9, y: 26.4 },
+    { name: "Tribal Village", sub: "Trading Hub", x: 42.3, y: 47.2 },
+    { name: "Sacred Lake", sub: "Spiritual Energy", x: 71.6, y: 44.6 },
+    { name: "Ancient Ruins", sub: "Treasure Hunt", x: 14.3, y: 60.5 },
+    { name: "Poison Marsh", sub: "Danger Zone", x: 70.6, y: 71.3 },
+    { name: "Jade Coast", sub: "Resource Area", x: 40.2, y: 77.8 }
+  ]},
+
+  azure: { title: "Azure Isles", img: "azure-isles.png", spots: [
+    { name: "Windspire Forest", sub: "Nature's Sanctuary", x: 21.8, y: 30.3 },
+    { name: "Azure Sanctum", sub: "Celestial Temple", x: 51.1, y: 32.2 },
+    { name: "Skyreach Peak", sub: "Cloud Observatory", x: 79.3, y: 18.4 },
+    { name: "Tranquil Harbor", sub: "Trade and Exchange", x: 87.6, y: 46.1 },
+    { name: "Moonlight Cove", sub: "Spirit Rituals", x: 18.6, y: 63.1 },
+    { name: "Serenity Lagoon", sub: "Healing Waters", x: 50.5, y: 79.1 },
+    { name: "Celestial Ruins", sub: "Ancient Relics", x: 81.3, y: 74.4 }
+  ]},
+
+  spirit: { title: "Spirit Isles", img: "spirit-isles.png", spots: [
+    { name: "Skyward Isles", sub: "Floating Spirit Realm", x: 51.1, y: 13.2 },
+    { name: "Verdant Spirit Forest", sub: "Nature's Blessing", x: 20.5, y: 28.3 },
+    { name: "Phantom Lake", sub: "Spirit Reflection", x: 80.9, y: 30.7 },
+    { name: "Celestia Grove", sub: "Spirit Sanctuary", x: 51.8, y: 43.7 },
+    { name: "Eternal Wind Plateau", sub: "Spirit Training", x: 20.8, y: 55.2 },
+    { name: "Soul Spire", sub: "Spirit Trials", x: 88.9, y: 52.5 },
+    { name: "Crystal Sanctuary", sub: "Spirit Crystals", x: 29.1, y: 79.6 },
+    { name: "Harmony Valley", sub: "Spirit Bonding", x: 54.8, y: 80.1 },
+    { name: "Ember Spirit Ridge", sub: "Spirit Forge", x: 84.2, y: 79.1 }
+  ]},
+
+  dragon: { title: "Dragon Isles", img: "dragon-isles.png", spots: [
+    { name: "Flameheart Peak", sub: "Dragon's Roost", x: 24.7, y: 33.9 },
+    { name: "Dragon's Forge", sub: "Volcanic Core", x: 49.9, y: 27.8 },
+    { name: "Skybound Citadel", sub: "Dragon Council", x: 73.2, y: 24.1 },
+    { name: "Celestial Falls", sub: "Dragon Sanctuary", x: 81.4, y: 50.5 },
+    { name: "Ancient Dragon Graveyard", sub: "Forgotten Bones", x: 18.7, y: 58.9 },
+    { name: "Emerald Nest", sub: "Dragon Hatchery", x: 49.9, y: 68 },
+    { name: "Drakeview Harbor", sub: "Trade Port", x: 84, y: 77.7 }
+  ]},
+
+  immortal: { title: "Immortal Isles", img: "immortal-isles.png", spots: [
+    { name: "Moonlight Sect", sub: "Ice Immortals", x: 25.1, y: 29.3 },
+    { name: "Celestial Palace", sub: "Heavenly Court", x: 52.1, y: 32.2 },
+    { name: "Hundred Refined Isles", sub: "Immortal Sect Alliance", x: 80.4, y: 21.7 },
+    { name: "Void Abyss", sub: "Forbidden Realm", x: 15.5, y: 54 },
+    { name: "Azure Cloud Valley", sub: "Healing Retreat", x: 86.4, y: 46.1 },
+    { name: "Spirit Grove", sub: "Nature's Blessing", x: 25.7, y: 71 },
+    { name: "Eternal Summit", sub: "Ascension Trial", x: 51.4, y: 76.9 },
+    { name: "Nine Heavens Tower", sub: "Realm of Transcendence", x: 79.1, y: 65.1 },
+    { name: "Immortal Harbor", sub: "Trade and Exchange", x: 86.9, y: 80.9 }
+  ]},
+
+  blessed: { title: "Blessed Isles", img: "blessed-isles.png", spots: [
+    { name: "Starfall Isle", sub: "Blessing Shrine", x: 24.7, y: 28 },
+    { name: "Celestial Sanctum", sub: "Divine Temple", x: 54.7, y: 26.7 },
+    { name: "Harmony Isle", sub: "Peace Garden", x: 80.5, y: 29.8 },
+    { name: "Lotus Isle", sub: "Healing Sanctuary", x: 32.6, y: 50.3 },
+    { name: "Golden Haven", sub: "Treasure Vault", x: 79.1, y: 50.8 },
+    { name: "Eternal Flame Isle", sub: "Trial Grounds", x: 18.9, y: 68.1 },
+    { name: "Serenity Isle", sub: "Refinement Grounds", x: 53.1, y: 75.7 },
+    { name: "Blessing Peak", sub: "Ascension Tower", x: 90.2, y: 80.4 }
+  ]}
+};
+
+var tg = window.Telegram && window.Telegram.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+
+var stage = document.getElementById("stage");
+var mapImg = document.getElementById("map");
+var titleEl = document.getElementById("title");
+var backBtn = document.getElementById("back");
+var panel = document.getElementById("panel");
+var pname = document.getElementById("pname");
+var psub = document.getElementById("psub");
+var pbtns = document.getElementById("pbtns");
+
+function closePanel() { panel.style.display = "none"; }
+
+function showMap(key) {
+  var m = MAPS[key];
+  closePanel();
+  titleEl.textContent = m.title;
+  backBtn.style.display = key === "world" ? "none" : "block";
+  mapImg.src = m.img;
+  document.getElementById("viewport").scrollTo(0, 0);
+
+  Array.prototype.slice.call(stage.querySelectorAll(".spot")).forEach(function (n) { n.remove(); });
+
+  m.spots.forEach(function (s, i) {
+    var d = document.createElement("div");
+    d.className = "spot" + (key === "world" ? " world" : "");
+    d.style.left = s.x + "%";
+    d.style.top = s.y + "%";
+    d.onclick = function (e) { e.stopPropagation(); openPanel(key, i, s); };
+    stage.appendChild(d);
+  });
+}
+
+function openPanel(mapKey, index, s) {
+  pname.textContent = s.name;
+  psub.textContent = s.sub || "";
+  pbtns.innerHTML = "";
+
+  if (s.goto) {
+    var go = document.createElement("button");
+    go.textContent = "Enter";
+    go.onclick = function () { showMap(s.goto); };
+    pbtns.appendChild(go);
+  } else {
+    var acq = document.createElement("button");
+    acq.textContent = "Acquire";
+    acq.onclick = function () {
+      var data = JSON.stringify({ action: "acquire", map: mapKey, holding_id: mapKey + ":" + index, name: s.name });
+      if (tg && tg.sendData) { tg.sendData(data); }
+      else { alert("Open this page from Telegram to acquire."); }
+    };
+    pbtns.appendChild(acq);
+  }
+
+  var close = document.createElement("button");
+  close.className = "alt";
+  close.textContent = "Close";
+  close.onclick = closePanel;
+  pbtns.appendChild(close);
+
+  panel.style.display = "block";
+}
+
+backBtn.onclick = function () { showMap("world"); };
+document.getElementById("viewport").onclick = closePanel;
+
+showMap("world");
+</script>
+</body>
+</html>
